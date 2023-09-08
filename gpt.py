@@ -11,9 +11,9 @@ from tensorflow.keras.initializers import RandomNormal
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_integer('n_embed', 256, 'Embedding')
-flags.DEFINE_integer('n_head', 4, 'Number of heads')
-flags.DEFINE_integer('n_layer', 4, 'Number of blocks')
+flags.DEFINE_integer('n_embed', 768, 'Embedding')
+flags.DEFINE_integer('n_head', 6, 'Number of heads')
+flags.DEFINE_integer('n_layer', 6, 'Number of blocks')
 flags.DEFINE_float('dropout', 0.1, 'Dropout rate')
 flags.DEFINE_float('learning_rate', 3e-4, 'Learning rate')
 flags.DEFINE_float('weight_decay', 0.1, 'Only applied on matmul weights')

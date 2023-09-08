@@ -6,8 +6,8 @@ import tensorflow_datasets as tfds
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_integer('seq_length', 256, 'Maximum context length for predictions')
-flags.DEFINE_integer('batch_size', 32, 'Batch size')
+flags.DEFINE_integer('seq_length', 128, 'Maximum context length for predictions')
+flags.DEFINE_integer('batch_size', 16, 'Batch size')
 flags.DEFINE_integer('epochs', 3, 'Number of training epochs')
 
 # flags.DEFINE_integer('n_embed', 384, 'Embedding')
@@ -51,19 +51,19 @@ def main(argv):
         return input_text, target_text
 
     ds_train = ds_train.map(split_target, num_parallel_calls=AUTOTUNE)
-    total_steps = ds_train.cardinality()
-    print(total_steps)
-    exit()
+    total_steps = 40000  #ds_train.cardinality()
+    # print(total_steps)
+    # exit()
     ds_train = ds_train.shuffle(10000).batch(FLAGS.batch_size)
     ds_train = ds_train.prefetch(AUTOTUNE)
     print(ds_train)
     i = 0
-    for input_text, target_text in ds_train:
-        print(input_text)
-        print(target_text)
-        i += 1
-    print(i)
-    exit()
+    # for input_text, target_text in ds_train:
+    #     print(input_text)
+    #     print(target_text)
+    #     i += 1
+    # print(i)
+    # exit()
 
     setattr(GPTConfig, 'vocab_size', char2id.vocabulary_size())
     trainer = Trainer(GPT, GPTConfig, FLAGS.epochs, FLAGS.batch_size, ds_train, None, total_steps)

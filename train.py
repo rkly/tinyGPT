@@ -1,11 +1,7 @@
-import os
-import re
 import time
-import itertools
 
 from tqdm import tqdm
 
-import numpy as np
 import tensorflow as tf
 import tensorflow_addons as tfa
 
@@ -23,38 +19,18 @@ class Trainer:
 
         self.model = model(config)
         step = tf.Variable(0, trainable=False)
-        # schedule = tf.optimizers.schedules.PiecewiseConstantDecay(
-        #     [100, 500], [1e-0, 1e-1, 1e-2])
         schedule = tf.keras.optimizers.schedules.ExponentialDecay(
             config.learning_rate, 500, config.weight_decay, staircase=False)
         # lr and wd can be a function or a tensor
         lr = config.learning_rate * schedule(step)
         wd = lambda: config.weight_decay * schedule(step)
         self.optimizer = tfa.optimizers.AdamW(learning_rate=lr, weight_decay=wd, epsilon=config.epsilon, clipnorm=config.clipnorm)
-        # self.optimizer = tf.keras.optimizers.AdamW(
-        #     learning_rate=config.learning_rate,
-        #     weight_decay=config.weight_decay,
-        #     epsilon=config.epsilon,
-        #     global_clipnorm=config.clipnorm
-        # )
         self.cce = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction=tf.keras.losses.Reduction.SUM_OVER_BATCH_SIZE)  # NONE
         self.train_metric = tf.keras.metrics.SparseCategoricalAccuracy()
 
     def train(self):
         train_loss = tf.keras.metrics.Mean('train_loss', dtype=tf.float32)
         test_loss = tf.keras.metrics.Mean('test_loss', dtype=tf.float32)
-
-        # @tf.function
-        # def train_step(inputs):
-        #     x, y = inputs
-
-        #     with tf.GradientTape() as tape:
-        #         logits, loss = self.model(x, y, training=True)
-            
-        #     gradients = tape.gradient(loss, self.model.trainable_weights)
-        #     self.optimizer.apply_gradients(zip(gradients, self.model.trainable_weights))
-        #     self.train_metric.update_state(y, logits)
-        #     return loss
 
         @tf.function
         def train_step(inputs):

@@ -97,48 +97,6 @@ class TinyMultiHeadAttention(tf.keras.layers.Layer):
         return output, attention_weights
 
 
-
-# class MultiHeadAttention(layers.Layer):
-#     def __init__(self, n_embed: int, num_heads: int, att_dropout: Optional[float]=0.1, residual_dropout: Optional[float]=0.1) -> None:
-#         super(MultiHeadAttention, self).__init__()
-#         self.key = layers.Dense(n_embed, kernel_initializer=RandomNormal(mean=0., stddev=0.02), name='key')
-#         self.query = layers.Dense(n_embed, kernel_initializer=RandomNormal(mean=0., stddev=0.02), name='query')
-#         self.value = layers.Dense(n_embed, kernel_initializer=RandomNormal(mean=0., stddev=0.02), name='value')
-#         self.n_embed = n_embed
-#         self.num_heads = num_heads
-#         self.att_dropout = att_dropout
-#         self.residual_dropout_layer = layers.Dropout(rate=residual_dropout, name='resid_dropout')
-#         self.depth = n_embed // self.num_heads
-#         self.attention_layer = layers.Attention(use_scale=True, dropout=att_dropout)
-
-#         # reg todo
-#         # projection
-#         self.proj = layers.Dense(n_embed, name='proj')
-
-#     @tf.function
-#     def split_heads(self, x: tf.Tensor) -> tf.Tensor:
-#         """
-#         Transpose to the shape of (batch_size, num_heads, seq_length, depth)
-#         """
-#         x = tf.reshape(x, (FLAGS.batch_size, -1, self.num_heads, self.depth), name='split_heads_reshape')
-#         return tf.transpose(x, perm=[0, 2, 1, 3], name='split_heads_transpose')
-
-#     def call(self, x: tf.Tensor, mask: tf.Tensor, training=False) -> tf.Tensor:
-#         key = self.key(x)  # (batch_size, seq_length, n_embed)
-#         query = self.query(x)
-#         value = self.value(x)
-
-#         key = self.split_heads(key)  # (batch_size, num_heads, seq_length, depth)
-#         query = self.split_heads(query)
-#         value = self.split_heads(value)
-
-#         scaled_attention_logits = self.attention_layer([query, value, key], mask, training)
-#         scaled_attention = tf.transpose(scaled_attention_logits, perm=[0, 2, 1, 3])
-#         concat_attention = tf.reshape(scaled_attention, (FLAGS.batch_size, -1, self.n_embed))
-#         output = self.proj(concat_attention)
-#         output = self.residual_dropout_layer(output, training=training)
-#         return output
-
 class Block(layers.Layer):
     def __init__(self, conf: dict) -> None:
         super().__init__()
@@ -156,11 +114,6 @@ class Block(layers.Layer):
         self.drop = layers.Dropout(conf.att_dropout)
         self.drop_ffn = layers.Dropout(conf.att_dropout)
 
-    # def call(self, x: tf.Tensor, mask, training) -> tf.Tensor:
-    #     norm = self.layernorm1(x)
-    #     x += self.mha(norm, mask, training=training)
-    #     x += self.ffn(self.layernorm2(x), training=training)
-    #     return x
     def call(self, inputs, mask, training=False):
         # Multi-head self-attention
         attn_output, _ = self.mha(inputs, inputs, inputs, mask=mask, training=training)
@@ -222,10 +175,7 @@ class GPT(tf.keras.Model):
         position_embeddings = self.position_emb[:, :T, :]
         e = self.drop(token_embeddings + position_embeddings, training)
         mask = 1 - tf.linalg.band_part(tf.ones((T, T)), -1, 0)  #  tf.linalg.band_part(input, -1, 0) ==> Lower triangular part.
-        # for i in range(self.n_layer):
-        #     x = self.blocks[i](x, mask, training)
-        # x = self.layernorm(x)
-        
+
         h = self.blocks(e, mask=mask, training=training)
         h = self.layernorm(h, training=training)
         logits = self.head(h)
@@ -236,14 +186,7 @@ class GPT(tf.keras.Model):
         outputs = (logits, loss)
         return outputs
     
-    def sample(
-        self,
-        input_ids,
-        steps,
-        temperature=1.0,
-        sample=False,
-        top_k=None
-    ):
+    def sample(self, input_ids, steps, temperature=1.0, sample=False, top_k=None):
         # get model's context size
         ctx_sz = self.conf.block_size
         

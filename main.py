@@ -10,12 +10,6 @@ flags.DEFINE_integer('seq_length', 128, 'Maximum context length for predictions'
 flags.DEFINE_integer('batch_size', 16, 'Batch size')
 flags.DEFINE_integer('epochs', 3, 'Number of training epochs')
 
-# flags.DEFINE_integer('n_embed', 384, 'Embedding')
-# flags.DEFINE_integer('n_head', 6, 'Number of heads')
-# flags.DEFINE_integer('n_layer', 6, 'Number of blocks')
-# flags.DEFINE_float('dropout', 0.1, 'Dropout rate')
-# flags.DEFINE_float('learning_rate', 3e-4, 'Learning rate')
-
 AUTOTUNE = tf.data.AUTOTUNE
 
 
@@ -57,13 +51,6 @@ def main(argv):
     ds_train = ds_train.shuffle(10000).batch(FLAGS.batch_size)
     ds_train = ds_train.prefetch(AUTOTUNE)
     print(ds_train)
-    i = 0
-    # for input_text, target_text in ds_train:
-    #     print(input_text)
-    #     print(target_text)
-    #     i += 1
-    # print(i)
-    # exit()
 
     setattr(GPTConfig, 'vocab_size', char2id.vocabulary_size())
     trainer = Trainer(GPT, GPTConfig, FLAGS.epochs, FLAGS.batch_size, ds_train, None, total_steps)

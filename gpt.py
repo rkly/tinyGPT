@@ -1,6 +1,6 @@
 from absl import flags
 
-from typing import Optional
+# from typing import Optional
 
 from dataclasses import dataclass, fields
 
@@ -27,7 +27,7 @@ class TinyMultiHeadAttention(tf.keras.layers.Layer):
     def __init__(self, d_model, num_heads, dropout_rate=0.0, residual_dropout_rate=0.0):
         super(TinyMultiHeadAttention, self).__init__()
         assert d_model % num_heads == 0, "d_model must be divisible by num_heads"
-        
+
         self.d_model = d_model
         self.num_heads = num_heads
         self.head_dim = d_model // num_heads
@@ -168,8 +168,11 @@ class GPT(tf.keras.Model):
             dtype=tf.float32,
             trainable=True)
             #super().build(input_shape)
+        self.char2id = tf.keras.layers.StringLookup(vocabulary=list(self.conf.vocab), mask_token=None, name="char2id")
+        self.id2char = tf.keras.layers.StringLookup(vocabulary=self.char2id.get_vocabulary(), invert=True, mask_token=None, name="id2char")
 
-    def call(self, input_ids, targets=None, training=False):
+    def call(self, input_chars, targets=None, training=False):
+        input_ids = self.char2id(input_chars)
         _, T = input_ids.shape
         token_embeddings = self.token_emb(input_ids)
         position_embeddings = self.position_emb[:, :T, :]
@@ -182,32 +185,33 @@ class GPT(tf.keras.Model):
         loss = None
         if targets is not None:
             loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+            targets = self.char2id(targets)
             loss = loss_fn(targets, logits)
         outputs = (logits, loss)
         return outputs
-    
-    def sample(self, input_ids, steps, temperature=1.0, sample=False, top_k=None):
+
+    @tf.function
+    def sample(self, input_chars, steps, temperature=1.0, sample=False, top_k=None):
         # get model's context size
         ctx_sz = self.conf.block_size
-        
+
         for _ in range(steps):
-            B, S = input_ids.shape
-            input_ids_cond = input_ids
+            B, S = input_chars.shape
+            input_chars_crop = input_chars
             if S > ctx_sz: # crop context if needed
-                input_ids_cond = input_ids[:,-ctx_sz:]
-            logits, _ = self(input_ids_cond, training=False)
+                input_chars_crop = input_chars[:, -ctx_sz:]
+            logits, _ = self(input_chars_crop, training=False)
             logits = logits[:, -1, :] / temperature
             if top_k is not None:
                 # optionally crop probabilities to only the top k options
-                v, _ = tf.math.top_k(logits, top_k, sorted=True)
-                logits = tf.identity(logits).numpy()
-                logits[logits < v.numpy()[:, [-1]]] = -float('Inf')
+                v, i = tf.math.top_k(logits, top_k, sorted=True)
+                cond = tf.math.less(logits, tf.expand_dims(v[:, -1], axis=-1))
+                logits = tf.where(cond, tf.constant(-float('inf'), dtype=logits.dtype), logits)
             probabilities = tf.nn.softmax(logits, axis=-1)
             if sample:
                 chunk_id = tf.random.categorical(tf.math.log(probabilities), num_samples=1)
             else:
                 _, chunk_id = tf.math.top_k(probabilities, k=1)
-            input_ids = tf.concat([
-                input_ids, tf.reshape(tf.cast(chunk_id, dtype=input_ids.dtype), shape=(B, 1))], axis=-1
-            )
-        return input_ids
+            chunk_chars = self.id2char(chunk_id)
+            input_chars = tf.concat((input_chars, chunk_chars), axis=1)
+        return input_chars

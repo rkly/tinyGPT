@@ -8,7 +8,7 @@ FLAGS = flags.FLAGS
 
 flags.DEFINE_integer('seq_length', 128, 'Maximum context length for predictions')
 flags.DEFINE_integer('batch_size', 16, 'Batch size')
-flags.DEFINE_integer('epochs', 3, 'Number of training epochs')
+flags.DEFINE_integer('epochs', 1, 'Number of training epochs')
 
 AUTOTUNE = tf.data.AUTOTUNE
 
@@ -31,7 +31,7 @@ def main(argv):
     char2id = tf.keras.layers.StringLookup(vocabulary=list(vocab), mask_token=None)
     id2char = tf.keras.layers.StringLookup(vocabulary=char2id.get_vocabulary(), invert=True, mask_token=None)
 
-    ds_train, _, _ = ds_train.map(char2id), ds_val.map(char2id), ds_test.map(char2id)
+    # ds_train, _, _ = ds_train.map(char2id), ds_val.map(char2id), ds_test.map(char2id)
     ds_train = ds_train.unbatch()
     ds_train = ds_train.batch(FLAGS.seq_length + 1, drop_remainder=True)
     # total_steps = ds_train.cardinality()
@@ -49,21 +49,22 @@ def main(argv):
     # print(total_steps)
     # exit()
     ds_train = ds_train.shuffle(10000).batch(FLAGS.batch_size)
-    ds_train = ds_train.prefetch(AUTOTUNE)
+    ds_train = ds_train.prefetch(AUTOTUNE).take(8)
     print(ds_train)
 
+    setattr(GPTConfig, 'vocab', vocab)
     setattr(GPTConfig, 'vocab_size', char2id.vocabulary_size())
     trainer = Trainer(GPT, GPTConfig, FLAGS.epochs, FLAGS.batch_size, ds_train, None, total_steps)
     trainer.train()
 
-    trainer.model.save('model')
-
     context = "O Love, O World"
     inputs = tf.strings.unicode_split(context, 'UTF-8')
-    x = tf.convert_to_tensor(char2id(inputs), dtype=tf.int64)[None, ...]
-    y = trainer.model.sample(x, 512, temperature=1.0, sample=True, top_k=10)[0]
-    completion = "".join([c.decode('utf-8') for c in id2char(y).numpy()])
+    x = tf.convert_to_tensor(inputs, dtype=tf.string)[None, ...]
+    print(x)
+    y = trainer.model.sample(x, 8, temperature=1.0, sample=True, top_k=10)[0]
+    completion = "".join([c.decode('utf-8') for c in y.numpy()])
     print(completion)
+    trainer.model.save('model_debug')
 
 
 if __name__ == '__main__':

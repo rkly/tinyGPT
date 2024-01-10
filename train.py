@@ -1,4 +1,5 @@
 import time
+from time import strftime, localtime
 
 from tqdm import tqdm
 
@@ -34,10 +35,11 @@ class Trainer:
 
         @tf.function
         def train_step(inputs):
-            x, y = inputs
+            x_char, y_char = inputs
+            y = self.model.char2id(y_char)
 
             with tf.GradientTape() as tape:
-                logits, loss = self.model(x, y, training=True)
+                logits, loss = self.model(x_char, y_char, training=True)
                 n_labels = tf.shape(logits)[-1]
                 mask = tf.reshape(tf.math.logical_not(y < 0), (-1,))
                 logits = tf.reshape(logits, (-1, n_labels))
@@ -68,4 +70,4 @@ class Trainer:
                 bar.set_description(progress_str)
             train_loss.reset_states()
             end = time.time()
-            print(f"Epoch done in {end - start}")
+            print(f"Epoch done in {strftime('%Y-%m-%d %H:%M:%S', localtime(end - start))}")

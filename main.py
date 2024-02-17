@@ -4,67 +4,66 @@ from absl import flags
 import tensorflow as tf
 import tensorflow_datasets as tfds
 
+from train import Trainer
+from gpt import GPT, GPTConfig
+
 FLAGS = flags.FLAGS
-
-flags.DEFINE_integer('seq_length', 128, 'Maximum context length for predictions')
-flags.DEFINE_integer('batch_size', 16, 'Batch size')
-flags.DEFINE_integer('epochs', 1, 'Number of training epochs')
-
-AUTOTUNE = tf.data.AUTOTUNE
+# Train config
+flags.DEFINE_integer('batch_size', 32, 'Batch size')
+flags.DEFINE_integer('epochs', 15, 'Number of training epochs')
+# GPT config
+flags.DEFINE_integer('block_size', 256, 'Maximum context length for predictions')
+flags.DEFINE_integer('n_embed', 384, 'Embedding')
+flags.DEFINE_integer('n_heads', 8, 'Number of heads')
+flags.DEFINE_integer('n_layer', 8, 'Number of blocks')
+flags.DEFINE_float('dropout', 0.1, 'Dropout rate')
+flags.DEFINE_float('residual_dropout', 0.1, 'Dropout rate')
+flags.DEFINE_float('embed_dropout', 0.1, 'Dropout rate for embeddings')
+flags.DEFINE_float('lr', 6e-4, 'Learning rate')
+flags.DEFINE_float('weight_decay', 0.1, 'Only applied on matmul weights')
+flags.DEFINE_float('beta1', 0.9, 'The exponential decay rate for the 1st moment estimates')
+flags.DEFINE_float('beta2', 0.95, 'The exponential decay rate for the 2nd moment estimates')
+flags.DEFINE_float('epsilon', 1e-5, 'Optimizer epsilon')
+flags.DEFINE_float('clipnorm', 1.0, 'Optimizer clipnorm')
 
 
 def main(argv):
     del argv
-    from train import Trainer  # to parse flags
-    from gpt import GPT, GPTConfig  
 
     ds = tfds.load(name='tiny_shakespeare')
     ds_train, ds_val, ds_test = ds['train'], ds['validation'], ds['test']
-    splitter = lambda x: tf.strings.unicode_split(x['text'], 'UTF-8')
-    ds_train, ds_val, ds_test = (
-        ds_train.map(splitter, num_parallel_calls=AUTOTUNE),
-        ds_val.map(splitter, num_parallel_calls=AUTOTUNE),
-        ds_test.map(splitter, num_parallel_calls=AUTOTUNE)
-    )
 
-    vocab = sorted(set(next(iter(ds_train)).numpy()))
-    char2id = tf.keras.layers.StringLookup(vocabulary=list(vocab), mask_token=None)
-    id2char = tf.keras.layers.StringLookup(vocabulary=char2id.get_vocabulary(), invert=True, mask_token=None)
-
-    # ds_train, _, _ = ds_train.map(char2id), ds_val.map(char2id), ds_test.map(char2id)
-    ds_train = ds_train.unbatch()
-    ds_train = ds_train.batch(FLAGS.seq_length + 1, drop_remainder=True)
-    # total_steps = ds_train.cardinality()
-    # print(total_steps)
-    # exit()
+    @tf.function
+    def splitter(sequence):
+        return tf.strings.unicode_split(sequence['text'], 'UTF-8')
 
     @tf.function
     def split_target(sequence):
-        input_text = sequence[:-1]
-        target_text = sequence[1:]
-        return input_text, target_text
+        return sequence[:-1], sequence[1:]
 
-    ds_train = ds_train.map(split_target, num_parallel_calls=AUTOTUNE)
-    total_steps = 40000  #ds_train.cardinality()
-    # print(total_steps)
-    # exit()
-    ds_train = ds_train.shuffle(10000).batch(FLAGS.batch_size)
-    ds_train = ds_train.prefetch(AUTOTUNE).take(8)
-    print(ds_train)
+    def get_steps(ds):
+        all_chars = next(iter(ds.map(splitter))).numpy()
+        vocab = sorted(set(all_chars))
+        steps_per_epoch = len(all_chars) // (FLAGS.block_size + 1) // FLAGS.batch_size
+        return vocab, steps_per_epoch
 
-    setattr(GPTConfig, 'vocab', vocab)
-    setattr(GPTConfig, 'vocab_size', char2id.vocabulary_size())
-    trainer = Trainer(GPT, GPTConfig, FLAGS.epochs, FLAGS.batch_size, ds_train, None, total_steps)
+    vocab, steps_per_epoch = get_steps(ds_train)
+    _, val_steps_per_epoch = get_steps(ds_val)
+    _, test_steps_per_epoch = get_steps(ds_test)
+
+    def process_ds(ds):
+        ds = ds.map(splitter, num_parallel_calls=tf.data.AUTOTUNE)
+        ds = ds.unbatch().batch(FLAGS.block_size + 1, drop_remainder=True)
+        ds = ds.map(split_target, num_parallel_calls=tf.data.AUTOTUNE)
+        ds = ds.shuffle(steps_per_epoch).batch(FLAGS.batch_size).prefetch(tf.data.AUTOTUNE)
+        return ds
+
+    ds_train, ds_val, ds_test = map(process_ds, (ds_train, ds_val, ds_test))
+
+    gpt_config = GPTConfig.make(vocab, **FLAGS.flag_values_dict())
+    trainer = Trainer(GPT, gpt_config, FLAGS.epochs, FLAGS.batch_size, ds_train, steps_per_epoch, ds_val, val_steps_per_epoch, ds_test, test_steps_per_epoch)
     trainer.train()
-
-    context = "O Love, O World"
-    inputs = tf.strings.unicode_split(context, 'UTF-8')
-    x = tf.convert_to_tensor(inputs, dtype=tf.string)[None, ...]
-    print(x)
-    y = trainer.model.sample(x, 8, temperature=1.0, sample=True, top_k=10)[0]
-    completion = "".join([c.decode('utf-8') for c in y.numpy()])
-    print(completion)
-    trainer.model.save('model_debug')
+    trainer.model.save('char_keras_model')
 
 
 if __name__ == '__main__':
